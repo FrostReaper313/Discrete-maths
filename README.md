@@ -1,78 +1,96 @@
-# Extremal Elements in Partially Ordered Sets
+"""
+Hasse diagram generator with minimal/maximal/greatest/least/lub/glb
+Commit the output PNG/SVG to your GitHub repo.
+"""
 
-This repo contains examples of **extremal elements**:
-1. Maximal  
-2. Minimal  
-3. Greatest  
-4. Least  
-5. Upper Bound  
-6. Lower Bound  
-+ their relationships (combos)
+import networkx as nx
+import matplotlib.pyplot as plt
 
----
-## Example 1: Divisibility on {1,2,3,6}
+# ---------- Define your poset ----------
+# Example: set {1,2,3,6} under divisibility
+elements = {1, 2, 3, 6}
+relation = lambda a, b: b % a == 0   # "a divides b"
 
-- **Maximal**: {2, 3, 6}  
-- **Minimal**: {1, 2, 3}  
-- **Greatest**: 6  
-- **Least**: 1  
-- **Upper bound of {2,3}**: 6  
-- **Lower bound of {2,3}**: 1  
+# Build full order graph (DAG)
+G = nx.DiGraph()
+for a in elements:
+    for b in elements:
+        if a != b and relation(a, b):
+            G.add_edge(a, b)
 
-### Hasse Diagram
-```mermaid
-graph TB
-    1 --> 2
-    1 --> 3
-    2 --> 6
-    3 --> 6
-```
+# Transitive reduction → Hasse edges
+H = nx.transitive_reduction(G)
 
----
+# ---------- Compute properties ----------
+# Minimal = no predecessors
+minimal = [n for n in H.nodes if H.in_degree(n) == 0]
+# Maximal = no successors
+maximal = [n for n in H.nodes if H.out_degree(n) == 0]
 
-## Example 2: Subset Inclusion on { {1}, {2}, {1,2} }
+# Least element = unique minimal that relates to all
+least = [m for m in minimal if all(nx.has_path(H, m, x) or m == x for x in H.nodes)]
+# Greatest element = unique maximal that relates to all
+greatest = [M for M in maximal if all(nx.has_path(H, x, M) or x == M for x in H.nodes)]
 
-- **Maximal**: {1,2}  
-- **Minimal**: {1}, {2}  
-- **Greatest**: {1,2}  
-- **Least**: None  
+# LUB (join) and GLB (meet) for a given subset
+def lub(subset):
+    """Least upper bound (join) of subset if exists"""
+    uppers = [x for x in H.nodes if all(nx.has_path(H, s, x) or s == x for s in subset)]
+    # minimal among uppers
+    candidates = [u for u in uppers if not any((u != v and nx.has_path(H, v, u)) for v in uppers)]
+    return candidates
 
-### Hasse Diagram
+def glb(subset):
+    """Greatest lower bound (meet) of subset if exists"""
+    lowers = [x for x in H.nodes if all(nx.has_path(H, x, s) or s == x for s in subset)]
+    # maximal among lowers
+    candidates = [l for l in lowers if not any((l != v and nx.has_path(H, l, v)) for v in lowers)]
+    return candidates
 
-```mermaid
-graph TB
-  A["{1}"]
-  B["{2}"]
-  C["{1,2}"]
+# Example: join and meet of {2,3}
+example_subset = [2,3]
+print("LUB(2,3):", lub(example_subset))
+print("GLB(2,3):", glb(example_subset))
 
-  A --> C
-  B --> C
-'''
+print("Minimal elements:", minimal)
+print("Maximal elements:", maximal)
+print("Least element:", least)
+print("Greatest element:", greatest)
 
----
+# ---------- Draw diagram ----------
+# Layout by topological levels
+levels = {}
+for node in nx.topological_sort(H):
+    preds = list(H.predecessors(node))
+    if not preds:
+        levels[node] = 0
+    else:
+        levels[node] = max(levels[p] + 1 for p in preds)
 
+pos = {}
+by_level = {}
+for n, lvl in levels.items():
+    by_level.setdefault(lvl, []).append(n)
 
-## Example 3: Natural Numbers (ℕ, ≤)
+for lvl, nodes in by_level.items():
+    for i, n in enumerate(sorted(nodes)):
+        pos[n] = (i, -lvl)
 
-- **Maximal**: None  
-- **Minimal**: 0  
-- **Greatest**: None  
-- **Least**: 0  
-- **Upper bound of {2,5}**: any n ≥ 5  
-- **Lower bound of {2,5}**: any n ≤ 2  
+# Node colors
+color_map = []
+for n in H.nodes:
+    if n in least: color_map.append("lightblue")
+    elif n in greatest: color_map.append("lightgreen")
+    elif n in minimal: color_map.append("orange")
+    elif n in maximal: color_map.append("pink")
+    else: color_map.append("white")
 
-### ASCII Diagram
-```
-0 < 1 < 2 < 3 < 4 < 5 < ...
-```
-
----
-
-## Combos (Relationships)
-
-- If **greatest element** exists → it is **maximal**.  
-- If **least element** exists → it is **minimal**.  
-- A poset can have **many maximal/minimal**, but **at most one greatest/least**.  
-- Every **greatest = upper bound**, every **least = lower bound**.  
-- **Supremum (LUB)** = least among upper bounds.  
-- **Infimum (GLB)** = greatest among lower bounds.  
+plt.figure(figsize=(5,5))
+nx.draw_networkx_nodes(H, pos, node_color=color_map, edgecolors='black')
+nx.draw_networkx_labels(H, pos)
+nx.draw_networkx_edges(H, pos, arrows=False, width=1.5)
+plt.axis("off")
+plt.tight_layout()
+plt.savefig("hasse.png", dpi=200)
+plt.savefig("hasse.svg")
+print("Saved hasse.png and hasse.svg")
